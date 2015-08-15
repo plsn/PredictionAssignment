@@ -1,0 +1,92 @@
+---
+title: "Coursera Practical Machine Learning - Prediction Assignment"
+author: "plsn"
+output: html_document
+---
+
+##Executive Summary
+In this project assignment, the data comes from this source:http://groupware.les.inf.puc-rio.br/har.The goal is to train a model (built and cross validated) based on the data of various Human Activity Recognition (HAR) accelerometers and then to predict the "classe" variable, i.e. the manner in which 6 participants did the exercise.
+
+##Data Preprocessing
+Brief examination of the data showed that some columns have a lot of missing (NA) values and these NAs are therefore removed from the data set.
+
+```{r}
+library(caret)
+library(randomForest)
+
+#Load the training set
+trainingOriginal <- read.csv("pml-training.csv",na.strings=c("NA",""))
+
+#Discard the columns with NAs
+NAs <- apply(trainingOriginal, 2, function(x) { sum(is.na(x)) })
+trainingUseful <- trainingOriginal[, which(NAs == 0)]
+```
+
+Next a subset of a representative 30% was needed due to my computer reaching the limit of the total allocated memory.
+
+Furthermore, for this subset data, the columns related to useless predictors like timestamps, the X column, user_name, and new_window were removed because they were not accelerometer values and hence will not be useful for prediction.
+
+```{r}
+# Create a subset of trainingValid data set
+trainIndex <- createDataPartition(y = trainingUseful$classe, p=0.3,list=FALSE)
+trainingData <- trainingUseful[trainIndex,]
+
+
+#Remove the useless predictors
+removeIndex <- grep("timestamp|X|user_name|new_window", names(trainingData))
+trainingData <- trainingData[, -removeIndex]
+```
+
+##Training a prediction model
+Cross validation of 4-fold cross validation was used (to reduce computational load and time). After setting the trainControl, the Random Forest (rf) algorithm was used and the out of sample error estimate is expected to be small, say < 3%.
+
+```{r}
+#Make use of parallel computing to speed up
+library(doParallel)
+registerDoParallel(cores=2)
+
+#Configure the train control for 4-fold cross-validation
+tc = trainControl(method = "cv", number = 4)
+
+#Fit the model using Random Forest algorithm
+set.seed(32343)
+modelFit <- train(trainingData$classe ~.,
+                data = trainingData,
+                method="rf",
+                trControl = tc,
+                prox = TRUE,
+                allowParallel = TRUE)
+```
+
+```{r}
+print(modelFit)
+print(modelFit$finalModel)
+```
+
+##Predicting on the test data
+Finally, after having fit the model with training data, we now use the fitted model for predictions on the test data. Moreover, for the test data, the columns related to useless predictors like timestamps, the X column, user_name, and new_window were also removed, similar to what was done for the training data. 
+
+```{r}
+# Loading test data
+testingOriginal = read.csv("pml-testing.csv",na.strings=c("NA",""))
+
+# Only keep the columns of testingOriginal that were also in trainingData
+testingData <- testingOriginal[ , which(names(testingOriginal) %in% names(trainingData))]
+
+# Run the prediction
+pred <- predict(modelFit, newdata = testingData)
+
+# Script function provided in the Instructions for Course Project submission
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(pred)
+```
+
+##Conclusion
+The model performed predictions very accurately. It managed to correctly predict 20 test cases out of 20.
